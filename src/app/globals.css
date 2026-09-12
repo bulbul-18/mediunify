@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/*
+  MediUnify design tokens.
+  Colors reused from the project report/diagrams so the product, the report,
+  and the pitch deck all read as one brand.
+
+  Font note: on Vercel, swap these font-family stacks for next/font/google
+  imports of Fraunces (display/headline) and IBM Plex Sans (body) — this
+  build environment can't fetch Google Fonts, so we fall back to close
+  system equivalents here.
+*/
+
+:root {
+  --background: #F4F1ED;
+  --foreground: #222222;
+
+  --color-navy: #1B2A4A;
+  --color-navy-ink: #0F1830;
+  --color-teal: #12777A;
+  --color-teal-dark: #0B5254;
+  --color-teal-light: #E1F0EF;
+  --color-coral: #C4573B;
+  --color-coral-light: #F7E7E2;
+  --color-purple: #5B4B8A;
+  --color-purple-light: #ECE8F5;
+  --color-danger: #B3261E;
+
+  --font-display: Fraunces, "Iowan Old Style", Georgia, serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-navy: var(--color-navy);
+  --color-navy-ink: var(--color-navy-ink);
+  --color-teal: var(--color-teal);
+  --color-teal-dark: var(--color-teal-dark);
+  --color-teal-light: var(--color-teal-light);
+  --color-coral: var(--color-coral);
+  --color-coral-light: var(--color-coral-light);
+  --color-purple: var(--color-purple);
+  --color-purple-light: var(--color-purple-light);
+  --color-danger: var(--color-danger);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}

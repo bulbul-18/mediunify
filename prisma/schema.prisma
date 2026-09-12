@@ -1,0 +1,60 @@
+// MediUnify — Prisma schema
+// Covers the Phase 1 MVP: patients, uploaded documents, extracted/validated
+// fields, and symptom-checker sessions. Auth is handled separately (Clerk),
+// so Patient.authId just stores the external auth provider's user id.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Patient {
+  id        String     @id @default(cuid())
+  authId    String     @unique // id from the auth provider (e.g. Clerk)
+  name      String
+  dob       DateTime?
+  createdAt DateTime   @default(now())
+
+  documents Document[]
+  sessions  Session[]
+}
+
+model Document {
+  id            String          @id @default(cuid())
+  patientId     String
+  patient       Patient         @relation(fields: [patientId], references: [id])
+  fileUrl       String          // storage URL (Vercel Blob / Supabase Storage)
+  originalText  String?         // raw OCR output, kept for debugging/audit
+  documentType  String          // "prescription" | "lab_report" | "other"
+  uploadedAt    DateTime        @default(now())
+
+  extractedFields ExtractedField[]
+}
+
+model ExtractedField {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id])
+  fieldType     String   // "medication" | "dosage" | "diagnosis" | "lab_value" | "date"
+  value         String
+  confidence    Float?   // model's confidence in the raw extraction, 0-1
+  flagged       Boolean  @default(false) // true if the validation layer flagged this
+  flagReason    String?  // human-readable reason, e.g. "dosage outside normal range"
+  createdAt     DateTime @default(now())
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id])
+  symptomsInput String
+  diagnosis     String
+  confidence    Float?
+  groundedMode  Boolean  @default(true) // false = stateless baseline, for evaluation
+  safetyFlags   String[] // e.g. ["Possible interaction with Amoxicillin (Feb 28 Rx)"]
+  createdAt     DateTime @default(now())
+}
