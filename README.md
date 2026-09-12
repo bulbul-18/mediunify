@@ -58,3 +58,5 @@ Visit `http://localhost:3000` — it redirects straight to `/dashboard`.
    common drugs/dosages, upgrade to the real RxNorm API later)
 3. Symptom checker page (`/symptom-checker`, also already linked)
 4. Swap all mock data for real Prisma queries once auth + DB are live
+
+echo. >> README.md
