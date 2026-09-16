@@ -50,9 +50,12 @@ export function AppNavbar({ active }: { active?: string }) {
               2
             </span>
           </button>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-light text-sm font-bold text-purple">
+                   <Link
+            href="/profile"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-light text-sm font-bold text-purple hover:opacity-80"
+          >
             A
-          </div>
+          </Link>
         </div>
       </div>
     </header>
