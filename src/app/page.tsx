@@ -30,11 +30,11 @@ export default function LandingPage() {
       <header className="flex items-center justify-between border-b border-navy/10 bg-white px-10 py-5">
         <span className="font-display text-xl text-navy">MediUnify</span>
         <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-sm font-medium text-navy">
+          <Link href="/login" className="text-sm font-medium text-navy">
             Log in
           </Link>
           <Link
-            href="/dashboard"
+            href="/login"
             className="rounded-full bg-teal px-5 py-2.5 text-sm font-medium text-white hover:bg-teal-dark"
           >
             Get started
@@ -56,7 +56,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
-                href="/dashboard"
+                href="/login"
                 className="rounded-full bg-teal px-6 py-3 text-sm font-semibold text-white hover:bg-teal-dark"
               >
                 Get started
