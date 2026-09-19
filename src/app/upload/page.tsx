@@ -5,27 +5,16 @@ import Link from "next/link";
 import { AppNavbar } from "@/components/AppNavbar";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 
-type Status = "idle" | "processing" | "done";
+type Status = "idle" | "processing" | "done" | "error";
 
-type Field = {
-  label: string;
+type ExtractedField = {
+  id: string;
+  fieldType: string;
   value: string;
-  confidence: number;
+  confidence: number | null;
   flagged: boolean;
-  reason?: string;
+  flagReason: string | null;
 };
-
-const MOCK_FIELDS: Field[] = [
-  { label: "MEDICATION", value: "Metformin", confidence: 0.94, flagged: false },
-  {
-    label: "DOSAGE",
-    value: "5000mg",
-    confidence: 0.88,
-    flagged: true,
-    reason: "5000mg is outside the typical range (500-1000mg)",
-  },
-  { label: "DATE", value: "2026-03-12", confidence: 0.99, flagged: false },
-];
 
 const STEPS = ["Upload", "Extract", "Verify", "Done"];
 
@@ -33,6 +22,9 @@ export default function UploadPage() {
   const [preview, setPreview] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const [status, setStatus] = useState<Status>("idle");
+  const [fields, setFields] = useState<ExtractedField[]>([]);
+  const [documentType, setDocumentType] = useState("prescription");
+  const [errorMessage, setErrorMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentStep = status === "idle" ? 0 : status === "processing" ? 1 : 3;
@@ -41,11 +33,41 @@ export default function UploadPage() {
     setPreview(URL.createObjectURL(file));
     setFileName(file.name);
     setStatus("idle");
+    setFields([]);
   }
 
-  function handleExtract() {
+  async function handleExtract() {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) return;
+
     setStatus("processing");
-    setTimeout(() => setStatus("done"), 1200);
+    setErrorMessage("");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("documentType", documentType);
+
+    try {
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+
+      setFields(data.document.extractedFields);
+      setStatus("done");
+    } catch (err) {
+      setStatus("error");
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : "We couldn't process that document. Please try again with a clear photo or scan."
+      );
+    }
   }
 
   return (
@@ -57,6 +79,23 @@ export default function UploadPage() {
         <p className="mt-1 text-sm text-foreground/60">
           A prescription or lab report, we'll extract and verify the details automatically.
         </p>
+
+        <div className="mt-4 flex gap-2">
+          {["prescription", "lab_report"].map((type) => (
+            <button
+              key={type}
+              onClick={() => setDocumentType(type)}
+              className={
+                "rounded-full px-4 py-1.5 text-sm font-medium " +
+                (documentType === type
+                  ? "bg-teal text-white"
+                  : "border border-navy/20 text-foreground hover:bg-navy/5")
+              }
+            >
+              {type === "prescription" ? "Prescription" : "Lab report"}
+            </button>
+          ))}
+        </div>
 
         <div className="mt-6 flex items-center gap-3">
           {STEPS.map((step, i) => (
@@ -89,7 +128,7 @@ export default function UploadPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.pdf"
+              accept="image/*"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -103,7 +142,7 @@ export default function UploadPage() {
                 className="flex w-full flex-col items-center justify-center rounded-2xl border-2 border-navy/25 bg-white py-24 text-navy/60 hover:border-teal hover:text-teal"
               >
                 <span className="font-medium">Click to select a file</span>
-                <span className="mt-1 text-xs">or drag and drop an image / PDF</span>
+                <span className="mt-1 text-xs">a photo or scan of a prescription/report</span>
               </button>
             ) : (
               <div className="overflow-hidden rounded-2xl border-2 border-navy bg-white">
@@ -118,7 +157,7 @@ export default function UploadPage() {
                     <p className="text-sm font-medium text-navy">{fileName}</p>
                     <p className="text-xs text-foreground/50">Preview</p>
                   </div>
-                  {status === "idle" && (
+                  {(status === "idle" || status === "error") && (
                     <button
                       onClick={handleExtract}
                       className="rounded-full bg-teal px-4 py-2 text-sm font-medium text-white hover:bg-teal-dark"
@@ -131,8 +170,14 @@ export default function UploadPage() {
             )}
 
             <p className="mt-3 text-xs text-foreground/50">
-              Accepted: JPG, PNG, PDF. Max 10MB
+              Accepted: JPG, PNG. PDFs aren't supported by the extraction step yet.
             </p>
+
+            {status === "error" && (
+              <div className="mt-4 rounded-xl bg-coral-light px-4 py-3 text-sm text-foreground">
+                {errorMessage}
+              </div>
+            )}
 
             <div className="mt-8">
               <h3 className="text-sm font-semibold text-navy">Recent uploads</h3>
@@ -150,6 +195,9 @@ export default function UploadPage() {
                   </div>
                 ))}
               </div>
+              <p className="mt-2 text-xs text-foreground/40">
+                Still showing sample data, this list isn't wired to the database yet.
+              </p>
             </div>
           </div>
 
@@ -162,11 +210,15 @@ export default function UploadPage() {
                   ? "Reading your document and checking it against known drug data"
                   : "Upload a document and click Extract and verify to see results here."}
               </div>
+            ) : fields.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-navy/10 bg-white p-8 text-center text-sm text-foreground/50">
+                We couldn't find any recognizable fields in that document. Try a clearer photo.
+              </div>
             ) : (
               <div className="mt-4 space-y-3">
-                {MOCK_FIELDS.map((field) => (
+                {fields.map((field) => (
                   <div
-                    key={field.label}
+                    key={field.id}
                     className={
                       "rounded-xl border p-4 " +
                       (field.flagged
@@ -176,13 +228,15 @@ export default function UploadPage() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold tracking-wide text-foreground/40">
-                        {field.label}
+                        {field.fieldType.replace("_", " ").toUpperCase()}
                       </span>
-                      <ConfidenceBadge confidence={field.confidence} />
+                      {field.confidence != null && (
+                        <ConfidenceBadge confidence={field.confidence} />
+                      )}
                     </div>
                     <p className="mt-1 font-medium text-foreground">{field.value}</p>
-                    {field.flagged && field.reason && (
-                      <p className="mt-2 text-sm text-[#712B13]">{field.reason}</p>
+                    {field.flagged && field.flagReason && (
+                      <p className="mt-2 text-sm text-[#712B13]">{field.flagReason}</p>
                     )}
                   </div>
                 ))}

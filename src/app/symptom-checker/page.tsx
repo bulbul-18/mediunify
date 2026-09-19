@@ -4,20 +4,18 @@ import { useState } from "react";
 import { AppNavbar } from "@/components/AppNavbar";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 
-type Status = "idle" | "processing" | "done";
+type Status = "idle" | "processing" | "done" | "error";
+
+type CheckResult = {
+  diagnosis: string;
+  confidence: number;
+  safetyFlags: string[];
+  nextStep: string;
+  historyUsed: string[];
+};
 
 const QUICK_SYMPTOMS = ["Headache", "Fever", "Fatigue", "Nausea", "Cough"];
 const SEVERITIES = ["Mild", "Moderate", "Severe"];
-
-const RELEVANT_HISTORY = [
-  "Prescription: Amoxicillin 500mg (Feb 28)",
-  "Visit notes: Annual checkup (Feb 10)",
-];
-
-const RECENT_CHECKS = [
-  { date: "Mar 5", summary: "Sore throat, likely viral" },
-  { date: "Feb 20", summary: "Fatigue, suggested rest and hydration" },
-];
 
 function Chip({
   label,
@@ -49,14 +47,38 @@ export default function SymptomCheckerPage() {
   );
   const [severity, setSeverity] = useState("Mild");
   const [status, setStatus] = useState<Status>("idle");
+  const [result, setResult] = useState<CheckResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
   function addSymptom(label: string) {
     setSymptoms((prev) => (prev ? prev + ", " + label.toLowerCase() : label));
   }
 
-  function handleCheck() {
+  async function handleCheck() {
+    if (!symptoms.trim()) return;
     setStatus("processing");
-    setTimeout(() => setStatus("done"), 1200);
+    setErrorMessage("");
+
+    try {
+      const res = await fetch("/api/symptom-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symptoms: symptoms + " (severity: " + severity + ")" }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Symptom check failed");
+      }
+
+      setResult(data);
+      setStatus("done");
+    } catch (err) {
+      setStatus("error");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Something went wrong. Please try again."
+      );
+    }
   }
 
   return (
@@ -106,27 +128,29 @@ export default function SymptomCheckerPage() {
               {status === "processing" ? "Checking" : "Check"}
             </button>
 
-            <div className="mt-8">
-              <h3 className="text-sm font-semibold text-navy">Relevant history used</h3>
-              <ul className="mt-2 space-y-1">
-                {RELEVANT_HISTORY.map((item) => (
-                  <li key={item} className="text-sm text-foreground/80">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {status === "error" && (
+              <div className="mt-4 rounded-xl bg-coral-light px-4 py-3 text-sm text-foreground">
+                {errorMessage}
+              </div>
+            )}
 
             <div className="mt-8">
-              <h3 className="text-sm font-semibold text-navy">Recent checks</h3>
-              <div className="mt-2 space-y-1.5">
-                {RECENT_CHECKS.map((c) => (
-                  <div key={c.date} className="flex gap-3 text-sm">
-                    <span className="w-12 text-foreground/40">{c.date}</span>
-                    <span className="text-foreground/80">{c.summary}</span>
-                  </div>
-                ))}
-              </div>
+              <h3 className="text-sm font-semibold text-navy">Relevant history used</h3>
+              {result && result.historyUsed.length > 0 ? (
+                <ul className="mt-2 space-y-1">
+                  {result.historyUsed.map((item, i) => (
+                    <li key={i} className="text-sm text-foreground/80">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-foreground/50">
+                  {status === "done"
+                    ? "No prior documents or sessions were on file for this check."
+                    : "Run a check to see which parts of your history the AI used."}
+                </p>
+              )}
             </div>
           </div>
 
@@ -138,37 +162,37 @@ export default function SymptomCheckerPage() {
                   : "Describe your symptoms and click Check to see a grounded suggestion here."}
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="rounded-2xl bg-purple-light p-5">
-                  <p className="text-xs font-bold tracking-wide text-purple">
-                    AI SUGGESTION
-                  </p>
-                  <p className="mt-2 font-semibold text-foreground">
-                    Tension headache, possibly linked to dehydration
-                  </p>
-                  <div className="mt-3">
-                    <ConfidenceBadge confidence={0.82} />
+              result && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl bg-purple-light p-5">
+                    <p className="text-xs font-bold tracking-wide text-purple">
+                      AI SUGGESTION
+                    </p>
+                    <p className="mt-2 font-semibold text-foreground">{result.diagnosis}</p>
+                    <div className="mt-3">
+                      <ConfidenceBadge confidence={result.confidence} />
+                    </div>
                   </div>
-                  <p className="mt-3 text-xs text-foreground/60">
-                    Grounded in your Feb 28 prescription and Mar 12 vitals.
-                  </p>
-                </div>
 
-                <div className="rounded-2xl bg-coral-light p-5">
-                  <p className="font-semibold text-foreground">Possible interaction</p>
-                  <p className="mt-2 text-sm text-foreground/80">
-                    Check with a doctor before taking ibuprofen alongside your current
-                    prescription.
-                  </p>
-                </div>
+                  {result.safetyFlags.length > 0 && (
+                    <div className="rounded-2xl bg-coral-light p-5">
+                      <p className="font-semibold text-foreground">Safety notes</p>
+                      <ul className="mt-2 space-y-1">
+                        {result.safetyFlags.map((flag, i) => (
+                          <li key={i} className="text-sm text-foreground/80">
+                            {flag}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-                <div className="rounded-2xl bg-teal-light p-5">
-                  <p className="font-semibold text-teal-dark">Suggested next step</p>
-                  <p className="mt-2 text-sm text-teal-dark/90">
-                    Rest, hydrate, and monitor for 24 hours.
-                  </p>
+                  <div className="rounded-2xl bg-teal-light p-5">
+                    <p className="font-semibold text-teal-dark">Suggested next step</p>
+                    <p className="mt-2 text-sm text-teal-dark/90">{result.nextStep}</p>
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         </div>

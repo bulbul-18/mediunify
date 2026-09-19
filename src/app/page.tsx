@@ -77,7 +77,7 @@ export default function LandingPage() {
                 <span className="text-sm text-foreground/70">
                   Every upload verified before it's trusted
                 </span>
-              </div>
+              </div>   
             </div>
           </div>
 
