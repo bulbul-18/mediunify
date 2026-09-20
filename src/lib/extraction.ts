@@ -2,8 +2,26 @@ import { GoogleGenAI } from "@google/genai";
 import { validateMedication } from "./drugReference";
 
 const MODEL_NAME = "gemini-flash-latest";
-
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+async function generateWithRetry(
+  params: Parameters<typeof ai.models.generateContent>[0],
+  maxAttempts = 3
+) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err) {
+      lastError = err;
+      const isRetryable =
+        err instanceof Error && /503|UNAVAILABLE|overloaded/i.test(err.message);
+      if (!isRetryable || attempt === maxAttempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+    }
+  }
+  throw lastError;
+}
 
 export type ExtractedFieldResult = {
   fieldType: "medication" | "dosage" | "diagnosis" | "lab_value" | "date";
@@ -13,53 +31,69 @@ export type ExtractedFieldResult = {
   flagReason?: string;
 };
 
+export type ParsedMedication = {
+  name: string;
+  dosageMg: number | null;
+  frequencyPerDay: number | null;
+  timing: string | null;
+  durationDays: number | null;
+  dosageLabel: string;
+  flagged: boolean;
+  flagReason?: string;
+};
+
+export type ExtractionResult = {
+  fields: ExtractedFieldResult[];
+  medications: ParsedMedication[];
+};
+
+type RawMedication = {
+  name?: string;
+  dosageMg?: number | null;
+  frequencyPerDay?: number | null;
+  timing?: string | null;
+  durationDays?: number | null;
+};
+
 type RawExtraction = {
-  medication?: string;
-  dosageMg?: number;
+  medications?: RawMedication[];
   diagnosis?: string;
   date?: string;
 };
 
-const EXTRACTION_PROMPT = `You are looking at a photo of a medical prescription or lab report.
-Extract the following fields as strict JSON, with no markdown formatting and no extra text:
+const EXTRACTION_PROMPT = `You are looking at a photo of a medical prescription or lab report, which may list one or more medications.
+Extract the following as strict JSON, with no markdown formatting and no extra text:
 {
-  "medication": "<primary medication name, or null if none found>",
-  "dosageMg": <dosage in milligrams as a number, or null>,
+  "medications": [
+    {
+      "name": "<medication name>",
+      "dosageMg": <number in milligrams if explicitly stated, otherwise null>,
+      "frequencyPerDay": <number of times per day it should be taken, if stated (e.g. "1 morning, 1 night" = 2), otherwise null>,
+      "timing": "<'before food', 'after food', or null if not stated>",
+      "durationDays": <number of days the course lasts, if stated, otherwise null>
+    }
+  ],
   "diagnosis": "<diagnosis or reason for visit, or null>",
   "date": "<date on the document in YYYY-MM-DD format, or null>"
 }
-If a field isn't present or you can't read it clearly, use null for that field. Respond with only the JSON object.`;
+List every distinct medication found, there may be more than one. If a field isn't present or unclear, use null for that field. Respond with only the JSON object.`;
 
-async function generateWithRetry(
-  params: Parameters<typeof ai.models.generateContent>[0],
-  maxAttempts = 3
-) {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await ai.models.generateContent(params);
-    } catch (err) {
-      lastError = err;
-      const isRetryable =
-        err instanceof Error && /503|UNAVAILABLE|overloaded/i.test(err.message);
-
-      if (!isRetryable || attempt === maxAttempts) {
-        throw err;
-      }
-
-      const delayMs = 1500 * attempt;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-
-  throw lastError;
+function describeFrequency(
+  frequencyPerDay: number | null,
+  timing: string | null,
+  durationDays: number | null
+): string {
+  const parts: string[] = [];
+  if (frequencyPerDay) parts.push(`${frequencyPerDay}x daily`);
+  if (timing) parts.push(timing);
+  if (durationDays) parts.push(`${durationDays} days`);
+  return parts.length ? parts.join(", ") : "as directed";
 }
 
 export async function extractDocumentFields(
   fileBuffer: Buffer,
   mimeType: string
-): Promise<ExtractedFieldResult[]> {
+): Promise<ExtractionResult> {
   const base64Image = fileBuffer.toString("base64");
 
   let response;
@@ -96,24 +130,60 @@ export async function extractDocumentFields(
   }
 
   const fields: ExtractedFieldResult[] = [];
+  const medications: ParsedMedication[] = [];
 
-  if (parsed.medication) {
+  for (const rawMed of parsed.medications ?? []) {
+    if (!rawMed.name) continue;
+
     fields.push({
       fieldType: "medication",
-      value: parsed.medication,
+      value: rawMed.name,
       confidence: 0.9,
       flagged: false,
     });
-  }
 
-  if (parsed.medication && parsed.dosageMg != null) {
-    const validation = validateMedication(parsed.medication, parsed.dosageMg);
+    let dosageLabel: string;
+    let flagged = false;
+    let flagReason: string | undefined;
+
+    if (rawMed.dosageMg != null) {
+      const validation = validateMedication(rawMed.name, rawMed.dosageMg);
+      dosageLabel = `${rawMed.dosageMg}mg`;
+      flagged = validation.flagged;
+      flagReason = validation.flagReason;
+    } else if (rawMed.frequencyPerDay != null) {
+      dosageLabel = describeFrequency(
+        rawMed.frequencyPerDay,
+        rawMed.timing ?? null,
+        rawMed.durationDays ?? null
+      );
+      if (rawMed.frequencyPerDay > 4 || rawMed.frequencyPerDay < 1) {
+        flagged = true;
+        flagReason = `${rawMed.frequencyPerDay}x/day looks unusual, please confirm this frequency.`;
+      }
+    } else {
+      dosageLabel = "Dosage not specified";
+      flagged = true;
+      flagReason = "No dosage or frequency could be read from this document, please confirm manually.";
+    }
+
     fields.push({
       fieldType: "dosage",
-      value: `${parsed.dosageMg}mg`,
+      value: dosageLabel,
       confidence: 0.85,
-      flagged: validation.flagged,
-      flagReason: validation.flagReason,
+      flagged,
+      flagReason,
+    });
+
+    medications.push({
+      name: rawMed.name,
+      dosageMg: rawMed.dosageMg ?? null,
+      frequencyPerDay: rawMed.frequencyPerDay ?? null,
+      timing: rawMed.timing ?? null,
+      durationDays: rawMed.durationDays ?? null,
+      dosageLabel,
+      flagged,
+      flagReason,
     });
   }
 
@@ -135,5 +205,5 @@ export async function extractDocumentFields(
     });
   }
 
-  return fields;
+  return { fields, medications };
 }

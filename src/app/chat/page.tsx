@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppNavbar } from "@/components/AppNavbar";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 
@@ -8,56 +8,118 @@ type Message = {
   id: string;
   role: "user" | "ai";
   text: string;
-  confidence?: number;
+  confidence: number | null;
 };
 
-const CONVERSATIONS = [
-  { title: "Ibuprofen interaction", date: "Today", active: true },
-  { title: "Headache follow-up", date: "Mar 5", active: false },
-  { title: "Diet questions", date: "Feb 22", active: false },
-];
-
-const INITIAL_MESSAGES: Message[] = [
-  { id: "1", role: "user", text: "Is it okay to take ibuprofen with my prescription?" },
-  {
-    id: "2",
-    role: "ai",
-    text: "Based on your Amoxicillin prescription (Feb 28), there's no known interaction with ibuprofen.",
-    confidence: 0.76,
-  },
-  { id: "3", role: "user", text: "Should I still see a doctor?" },
-  {
-    id: "4",
-    role: "ai",
-    text: "Not urgently, but if the headache lasts beyond 48 hours, a check-up is a good idea.",
-    confidence: 0.71,
-  },
-];
-
-function mockReply(): Message {
-  return {
-    id: crypto.randomUUID(),
-    role: "ai",
-    text: "Based on what's in your record so far, that looks fine, but let me know if symptoms change or worsen.",
-    confidence: 0.68,
-  };
-}
+type Conversation = {
+  id: string;
+  title: string;
+  createdAt: string;
+};
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  function handleSend() {
+  useEffect(() => {
+    fetch("/api/chat")
+      .then((res) => res.json())
+      .then((data) => {
+        const list: Conversation[] = data.conversations || [];
+        setConversations(list);
+        if (list.length > 0) {
+          selectConversation(list[0].id);
+        }
+      })
+      .finally(() => setLoadingList(false));
+  }, []);
+
+  function selectConversation(id: string) {
+    setActiveId(id);
+    setLoadingMessages(true);
+    fetch(`/api/chat/${id}`)
+      .then((res) => res.json())
+      .then((data) => setMessages(data.messages || []))
+      .finally(() => setLoadingMessages(false));
+  }
+
+  async function handleNewChat() {
+    setErrorMessage("");
+    try {
+      const res = await fetch("/api/chat", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not create a new chat");
+
+      setConversations((prev) => [data.conversation, ...prev]);
+      setActiveId(data.conversation.id);
+      setMessages([]);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Something went wrong.");
+    }
+  }
+
+  async function handleSend() {
     if (!input.trim()) return;
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", text: input };
-    setMessages((prev) => [...prev, userMsg]);
+    setErrorMessage("");
+
+    let conversationId = activeId;
+    const wasFirstMessage = messages.length === 0;
+
+    if (!conversationId) {
+      try {
+        const res = await fetch("/api/chat", { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not start a new chat");
+        conversationId = data.conversation.id;
+        setConversations((prev) => [data.conversation, ...prev]);
+        setActiveId(conversationId);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : "Something went wrong.");
+        return;
+      }
+    }
+
+    const userText = input;
+    const optimisticUserMessage: Message = {
+      id: "temp-" + Date.now(),
+      role: "user",
+      text: userText,
+      confidence: null,
+    };
+    setMessages((prev) => [...prev, optimisticUserMessage]);
     setInput("");
     setSending(true);
-    setTimeout(() => {
-      setMessages((prev) => [...prev, mockReply()]);
+
+    try {
+      const res = await fetch(`/api/chat/${conversationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: userText }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Failed to send message");
+
+      setMessages((prev) => [...prev, data.message]);
+
+      if (wasFirstMessage) {
+        const listRes = await fetch("/api/chat");
+        const listData = await listRes.json();
+        setConversations(listData.conversations || []);
+      }
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Something went wrong sending that message."
+      );
+    } finally {
       setSending(false);
-    }, 900);
+    }
   }
 
   return (
@@ -68,26 +130,36 @@ export default function ChatPage() {
         <aside className="hidden w-64 flex-shrink-0 rounded-2xl border border-navy/10 bg-white p-4 md:block">
           <h3 className="text-sm font-semibold text-navy">Conversations</h3>
           <div className="mt-3 space-y-1">
-            {CONVERSATIONS.map((c) => (
-              <div
-                key={c.title}
-                className={
-                  "cursor-pointer rounded-lg px-3 py-2 " +
-                  (c.active ? "bg-teal-light" : "hover:bg-navy/5")
-                }
-              >
-                <p
+            {loadingList ? (
+              <p className="text-sm text-foreground/40">Loading</p>
+            ) : conversations.length === 0 ? (
+              <p className="text-sm text-foreground/40">No conversations yet.</p>
+            ) : (
+              conversations.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => selectConversation(c.id)}
                   className={
-                    "text-sm " + (c.active ? "font-semibold text-navy" : "text-foreground/80")
+                    "block w-full rounded-lg px-3 py-2 text-left " +
+                    (c.id === activeId ? "bg-teal-light" : "hover:bg-navy/5")
                   }
                 >
-                  {c.title}
-                </p>
-                <p className="text-xs text-foreground/40">{c.date}</p>
-              </div>
-            ))}
+                  <p
+                    className={
+                      "truncate text-sm " +
+                      (c.id === activeId ? "font-semibold text-navy" : "text-foreground/80")
+                    }
+                  >
+                    {c.title}
+                  </p>
+                </button>
+              ))
+            )}
           </div>
-          <button className="mt-4 w-full rounded-full border border-navy/20 py-2 text-sm font-medium text-navy hover:bg-navy/5">
+          <button
+            onClick={handleNewChat}
+            className="mt-4 w-full rounded-full border border-navy/20 py-2 text-sm font-medium text-navy hover:bg-navy/5"
+          >
             New chat
           </button>
         </aside>
@@ -96,28 +168,36 @@ export default function ChatPage() {
           <p className="font-display text-2xl text-navy">Ask MediUnify</p>
 
           <div className="mt-6 flex-1 space-y-4 overflow-y-auto">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}
-              >
+            {loadingMessages ? (
+              <p className="text-sm text-foreground/50">Loading conversation</p>
+            ) : messages.length === 0 ? (
+              <p className="text-sm text-foreground/50">
+                No messages yet, ask something below to get started.
+              </p>
+            ) : (
+              messages.map((m) => (
                 <div
-                  className={
-                    "max-w-md rounded-2xl px-4 py-3 text-sm " +
-                    (m.role === "user"
-                      ? "bg-teal text-white"
-                      : "bg-purple-light text-foreground")
-                  }
+                  key={m.id}
+                  className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}
                 >
-                  <p>{m.text}</p>
-                  {m.confidence != null && (
-                    <div className="mt-2">
-                      <ConfidenceBadge confidence={m.confidence} />
-                    </div>
-                  )}
+                  <div
+                    className={
+                      "max-w-md rounded-2xl px-4 py-3 text-sm " +
+                      (m.role === "user"
+                        ? "bg-teal text-white"
+                        : "bg-purple-light text-foreground")
+                    }
+                  >
+                    <p>{m.text}</p>
+                    {m.confidence != null && (
+                      <div className="mt-2">
+                        <ConfidenceBadge confidence={m.confidence} />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
             {sending && (
               <div className="flex justify-start">
                 <div className="rounded-2xl bg-purple-light px-4 py-3 text-sm text-foreground/50">
@@ -127,17 +207,25 @@ export default function ChatPage() {
             )}
           </div>
 
+          {errorMessage && (
+            <div className="mt-3 rounded-xl bg-coral-light px-4 py-3 text-sm text-foreground">
+              {errorMessage}
+            </div>
+          )}
+
           <div className="mt-4 flex items-center gap-2 rounded-full border border-navy/20 bg-white px-4 py-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              onKeyDown={(e) => e.key === "Enter" && !sending && handleSend()}
               placeholder="Ask a health question"
-              className="flex-1 bg-transparent text-sm outline-none"
+              disabled={sending}
+              className="flex-1 bg-transparent text-sm outline-none disabled:opacity-60"
             />
             <button
               onClick={handleSend}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-teal text-white hover:bg-teal-dark"
+              disabled={sending}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-teal text-white hover:bg-teal-dark disabled:opacity-60"
               aria-label="Send"
             >
               Send

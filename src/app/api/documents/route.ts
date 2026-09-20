@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { extractDocumentFields } from "@/lib/extraction";
+import { createRemindersForMedication } from "@/lib/reminders";
 
 async function getDemoPatient() {
   return prisma.patient.upsert({
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const patient = await getDemoPatient();
 
-    const extractedFields = await extractDocumentFields(buffer, file.type);
+    const { fields, medications } = await extractDocumentFields(buffer, file.type);
 
     const document = await prisma.document.create({
       data: {
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
         fileUrl: `local-placeholder/${file.name}`,
         documentType,
         extractedFields: {
-          create: extractedFields.map((f) => ({
+          create: fields.map((f) => ({
             fieldType: f.fieldType,
             value: f.value,
             confidence: f.confidence,
@@ -42,6 +43,10 @@ export async function POST(request: NextRequest) {
       },
       include: { extractedFields: true },
     });
+
+    for (const med of medications) {
+      await createRemindersForMedication(patient.id, document.id, med);
+    }
 
     return NextResponse.json({ document });
   } catch (err) {
