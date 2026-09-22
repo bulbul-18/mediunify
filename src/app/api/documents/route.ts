@@ -2,14 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { extractDocumentFields } from "@/lib/extraction";
 import { createRemindersForMedication } from "@/lib/reminders";
-
-async function getDemoPatient() {
-  return prisma.patient.upsert({
-    where: { authId: "demo-user" },
-    update: {},
-    create: { authId: "demo-user", name: "Aanya" },
-  });
-}
+import { getCurrentPatient } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const patient = await getDemoPatient();
+    const patient = await getCurrentPatient();
 
     const { fields, medications } = await extractDocumentFields(buffer, file.type);
 

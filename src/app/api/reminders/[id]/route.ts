@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { toggleReminder } from "@/lib/reminders";
-
-async function getDemoPatient() {
-  return prisma.patient.upsert({
-    where: { authId: "demo-user" },
-    update: {},
-    create: { authId: "demo-user", name: "Aanya" },
-  });
-}
+import { getCurrentPatient } from "@/lib/auth";
 
 export async function PATCH(
   request: NextRequest,
@@ -16,7 +8,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const patient = await getDemoPatient();
+    const patient = await getCurrentPatient();
     const reminder = await toggleReminder(id, patient.id);
     return NextResponse.json({ reminder });
   } catch (err) {

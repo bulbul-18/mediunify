@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { runGroundedSymptomCheck } from "@/lib/symptomChecker";
-
-async function getDemoPatient() {
-  return prisma.patient.upsert({
-    where: { authId: "demo-user" },
-    update: {},
-    create: { authId: "demo-user", name: "Aanya" },
-  });
-}
+import { getCurrentPatient } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Symptoms text is required" }, { status: 400 });
     }
 
-    const patient = await getDemoPatient();
+    const patient = await getCurrentPatient();
     const result = await runGroundedSymptomCheck(patient.id, symptoms);
 
     return NextResponse.json(result);

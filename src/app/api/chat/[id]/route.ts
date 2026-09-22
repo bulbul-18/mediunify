@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getConversationMessages, sendChatMessage } from "@/lib/chat";
-
-async function getDemoPatient() {
-  return prisma.patient.upsert({
-    where: { authId: "demo-user" },
-    update: {},
-    create: { authId: "demo-user", name: "Aanya" },
-  });
-}
+import { getCurrentPatient } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
@@ -36,7 +28,7 @@ export async function POST(
       return NextResponse.json({ error: "Message text is required" }, { status: 400 });
     }
 
-    const patient = await getDemoPatient();
+    const patient = await getCurrentPatient();
     const aiMessage = await sendChatMessage(patient.id, id, text);
 
     return NextResponse.json({ message: aiMessage });

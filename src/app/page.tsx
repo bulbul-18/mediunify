@@ -34,7 +34,7 @@ export default function LandingPage() {
             Log in
           </Link>
           <Link
-            href="/login"
+            href="/signup"
             className="rounded-full bg-teal px-5 py-2.5 text-sm font-medium text-white hover:bg-teal-dark"
           >
             Get started
@@ -56,7 +56,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
-                href="/login"
+                href="/signup"
                 className="rounded-full bg-teal px-6 py-3 text-sm font-semibold text-white hover:bg-teal-dark"
               >
                 Get started

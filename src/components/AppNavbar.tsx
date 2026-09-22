@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { UserButton } from "@clerk/nextjs";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard" },
@@ -23,11 +24,11 @@ export function AppNavbar({ active }: { active?: string }) {
             <Link
               key={item.href}
               href={item.href}
-              className={
+              className={`text-sm font-medium ${
                 active === item.label
-                  ? "border-b-2 border-teal pb-1 text-sm font-medium text-teal"
-                  : "text-sm font-medium text-foreground/70 hover:text-navy"
-              }
+                  ? "border-b-2 border-teal pb-1 text-teal"
+                  : "text-foreground/70 hover:text-navy"
+              }`}
             >
               {item.label}
             </Link>
@@ -43,19 +44,28 @@ export function AppNavbar({ active }: { active?: string }) {
           </button>
           <button aria-label="Notifications" className="relative text-navy/50 hover:text-navy">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
               <path d="M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-coral text-[9px] font-bold text-white">
               2
             </span>
           </button>
-                   <Link
-            href="/profile"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-light text-sm font-bold text-purple hover:opacity-80"
-          >
-            A
-          </Link>
+          <UserButton appearance={{ elements: { avatarBox: "h-9 w-9" } }}>
+            <UserButton.MenuItems>
+              <UserButton.Link
+                label="Medical profile"
+                href="/profile"
+                labelIcon={<span>🩺</span>}
+              />
+            </UserButton.MenuItems>
+          </UserButton>
         </div>
       </div>
     </header>

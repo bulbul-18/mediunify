@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { listConversations, createConversation } from "@/lib/chat";
-
-async function getDemoPatient() {
-  return prisma.patient.upsert({
-    where: { authId: "demo-user" },
-    update: {},
-    create: { authId: "demo-user", name: "Aanya" },
-  });
-}
+import { getCurrentPatient } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const patient = await getDemoPatient();
+    const patient = await getCurrentPatient();
     const conversations = await listConversations(patient.id);
     return NextResponse.json({ conversations });
   } catch (err) {
@@ -23,7 +15,7 @@ export async function GET() {
 
 export async function POST() {
   try {
-    const patient = await getDemoPatient();
+    const patient = await getCurrentPatient();
     const conversation = await createConversation(patient.id);
     return NextResponse.json({ conversation });
   } catch (err) {
